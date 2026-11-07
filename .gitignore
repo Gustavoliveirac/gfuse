@@ -1,0 +1,28 @@
+# --- dados, caches e saídas do código (gerados, nunca versionados) ---
+dados/
+processados/
+resultados/
+saida_*/
+cache*/
+logs/
+teste/
+_arquivo/
+# --- pastas que só sobem para o Project (direitos autorais e textos em andamento) ---
+orientacoes/
+escrita/
+referencias/
+# --- binários e arquivos de execução ---
+*.zip
+*.npy
+*.npz
+*.pt
+*.parquet
+*.nc
+*.h5
+*.HDF5
+*.png
+*.log
+nohup.out
+__pycache__/
+*.pyc
+.env
