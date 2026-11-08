@@ -47,16 +47,95 @@ CMAP = plt.get_cmap("turbo", len(NIVEIS) - 1)
 NORM = BoundaryNorm(NIVEIS, CMAP.N)
 
 
+def _dirs():
+    """Lê logs/produtos_dirs.sh (gerado pelo resgate) e exporta os caminhos novos."""
+    f = RAIZ / "logs" / "produtos_dirs.sh"
+    if f.exists():
+        for lin in f.read_text().splitlines():
+            if lin.startswith("export ") and "=" in lin:
+                k, v = lin[7:].split("=", 1)
+                os.environ.setdefault(k.strip(), v.strip())
+
+
+class ImergNpz:
+    """IMERG Early recortado pelo resgate (npz com mmh por meia-hora, carimbo = início)."""
+
+    def __init__(self, base):
+        self.dir = Path(base)
+        g = np.load(self.dir / "grade.npz")
+        self._lat, self._lon = g["lat"].astype(float), g["lon"].astype(float)
+
+    def rate(self, start_utc):
+        t = pd.Timestamp(start_utc).round("30min")
+        p = self.dir / f"{t.year}" / f"{t.month:02d}" / f"{t.day:02d}" / f"imerg_early_{t:%Y%m%d%H%M}.npz"
+        if not p.exists():
+            return None
+        try:
+            a = np.load(p)["mmh"].astype(np.float32)
+        except Exception:
+            return None
+        return np.where((a < 0) | (a > 500), np.nan, a)
+
+    def window_mm(self, t0_brt, agg_min):
+        t0 = pd.Timestamp(t0_brt).round("30min")
+        if agg_min not in (30, 60) or abs((pd.Timestamp(t0_brt) - t0).total_seconds()) > 120:
+            return None
+        t0u = t0 + pd.Timedelta(hours=3)
+        rs = [self.rate(t0u - pd.Timedelta(minutes=m)) for m in range(agg_min, 0, -30)]
+        if any(r is None for r in rs):
+            return None
+        return np.nanmean(np.stack(rs), 0) * (agg_min / 60.0)
+
+    def at_points(self, field, lat, lon):
+        da, do = float(np.median(np.diff(self._lat))), float(np.median(np.diff(self._lon)))
+        ia = np.clip(np.round((np.asarray(lat, float) - self._lat[0]) / da).astype(int), 0, len(self._lat) - 1)
+        io = np.clip(np.round((np.asarray(lon, float) - self._lon[0]) / do).astype(int), 0, len(self._lon) - 1)
+        return field[ia, io]
+
+    def to_grid64(self, field):
+        glat, glon = C.grade_latlon()
+        return self.at_points(field, glat.ravel(), glon.ravel()).reshape(K.IMG_SIZE, K.IMG_SIZE)
+
+
 def fontes(agg):
+    """Cada fonte é opcional: a que não abrir fica de fora, sem interromper as outras."""
+    _dirs()
     sys.path.insert(1, str(GFUSE2))
-    from sources import ImergEarly, MergeHourly
-    out = {"imerg_early": ImergEarly(imerg_dir=K.IMERG_DIR, verbose=False)}
+    out = {}
+
+    def tenta(nome, f):
+        try:
+            out[nome] = f()
+            print(f"  fonte {nome}: ok")
+        except Exception as e:
+            print(f"  fonte {nome}: indisponível ({str(e)[:120]})")
+
+    if os.environ.get("IMERG_NPZ_DIR") and (Path(os.environ["IMERG_NPZ_DIR"]) / "grade.npz").exists():
+        tenta("imerg_early", lambda: ImergNpz(os.environ["IMERG_NPZ_DIR"]))
+    else:
+        def _im():
+            from sources import ImergEarly
+            return ImergEarly(imerg_dir=K.IMERG_DIR, verbose=False)
+        tenta("imerg_early", _im)
     if agg == 60:
-        from sources_extra import GsmapHourly, PdirNow
-        out["merge"] = MergeHourly(verbose=False)
-        out["pdir_now"] = PdirNow(verbose=False)
+        def _mg():
+            from sources import MergeHourly
+            return MergeHourly(merge_dir=os.environ.get("MERGE_DIR"), verbose=False)
+        tenta("merge", _mg)
+
+        def _pd():
+            from sources_extra import PdirNow
+            p = PdirNow(base_dir=os.environ.get("PDIR_DIR"), verbose=False)
+            assert p.lat is not None, "sem grade.npz"
+            return p
+        tenta("pdir_now", _pd)
         for k in ("now", "nrt", "gauge"):
-            out[f"gsmap_{k}"] = GsmapHourly(k, verbose=False)
+            def _gs(k=k):
+                from sources_extra import GsmapHourly
+                g = GsmapHourly(k, base_dir=os.environ.get("GSMAP_DIR"), verbose=False)
+                assert g.lat is not None, "sem grade.npz"
+                return g
+            tenta(f"gsmap_{k}", _gs)
     return out
 
 
@@ -133,35 +212,51 @@ def avaliar(agg, n_ev):
     if rk is not None:
         d = d.merge(rk[["goes_stem", "px", "py", "mm_w0"]].rename(columns={"mm_w0": "s1_rk_mm"}),
                     on=["goes_stem", "px", "py"], how="left")
+    if not fs:
+        print("  nenhuma fonte disponível")
+        return
     cob = [dict(produto=n, instantes=int(d.groupby("goes_stem")[n].apply(lambda s: s.notna().any()).sum()))
            for n in fs]
     comum = d.dropna(subset=list(fs))
     cob.append(dict(produto="todos em comum", instantes=int(comum["goes_stem"].nunique())))
     pd.DataFrame(cob).to_csv(SAI / f"produtos_cobertura_{agg}.csv", index=False)
     print(pd.DataFrame(cob).to_string(index=False))
-    if comum.empty:
-        print("  nenhum instante com todos os produtos")
-        return
-    pcol = next((c for c in comum.columns if c.startswith("p0.2") and c.endswith("_w0")), None)
+    pcol = next((c for c in d.columns if c.startswith("p0.2") and c.endswith("_w0")), None)
+
+    def bloco_metricas(x, rotulo):
+        lin = []
+        for lado in ("alvo", "holdout"):
+            y = x[x["lado"] == lado]
+            if y.empty:
+                continue
+            obs = y["obs"].values
+            base = dict(subconjunto=rotulo, lado=lado, instantes=int(y["goes_stem"].nunique()))
+            lin.append(dict(**base, produto=nome_g, **metricas(
+                y["mm_w0"].values, obs, y[pcol].values if pcol else None,
+                y["thr_chuva"].values if pcol and "thr_chuva" in y else None)))
+            if "s1_rk_mm" in y:
+                lin.append(dict(**base, produto="satélite corrigido", **metricas(y["s1_rk_mm"].values, obs)))
+            for ref, nome in (("sk", "krigagem simples"), ("idw", "IDW"), ("rrq", "RRQPE")):
+                if f"{ref}_w0" in y:
+                    lin.append(dict(**base, produto=nome, **metricas(y[f"{ref}_w0"].values, obs)))
+            for n in fs:
+                if y[n].notna().any():
+                    lin.append(dict(**base, produto=n, **metricas(y[n].values, obs)))
+        return lin
+
     lin = []
-    for lado in ("alvo", "holdout"):
-        x = comum[comum["lado"] == lado]
-        obs = x["obs"].values
-        lin.append(dict(lado=lado, produto=nome_g, **metricas(
-            x["mm_w0"].values, obs, x[pcol].values if pcol else None,
-            x["thr_chuva"].values if pcol and "thr_chuva" in x else None)))
-        if "s1_rk_mm" in x:
-            lin.append(dict(lado=lado, produto="satélite corrigido", **metricas(x["s1_rk_mm"].values, obs)))
-        for ref, nome in (("sk", "krigagem simples"), ("idw", "IDW"), ("rrq", "RRQPE")):
-            if f"{ref}_w0" in x:
-                lin.append(dict(lado=lado, produto=nome, **metricas(x[f"{ref}_w0"].values, obs)))
-        for n in fs:
-            lin.append(dict(lado=lado, produto=n, **metricas(x[n].values, obs)))
+    for n in fs:                      # cada produto onde ele existe, com o GFUSE nos mesmos pontos
+        x = d[d[n].notna()]
+        if len(x):
+            lin += [r for r in bloco_metricas(x, f"onde há {n}") if r["produto"] in
+                    (n, nome_g, "satélite corrigido", "krigagem simples", "IDW", "RRQPE")]
+    if len(comum):
+        lin += bloco_metricas(comum, "todos em comum")
     t = pd.DataFrame(lin)
-    t["instantes_comuns"] = comum["goes_stem"].nunique()
     t.to_csv(SAI / f"produtos_{agg}.csv", index=False)
     print(t.round(3).to_string(index=False))
-    eventos(agg, comum, fs, n_ev)
+    base_ev = comum if len(comum) else d.dropna(subset=[n for n in fs if n != "imerg_early"] or list(fs), how="all")
+    eventos(agg, base_ev, fs, n_ev)
 
 
 def eventos(agg, comum, fs, n_ev):

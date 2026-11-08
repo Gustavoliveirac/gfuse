@@ -11,6 +11,7 @@ mkdir -p logs resultados/analise/figuras
 C=$(date +%Y%m%d_%H%M)
 LOG=logs/analises.log
 PY=${PYTHON:-python}
+[ -f logs/produtos_dirs.sh ] && source logs/produtos_dirs.sh   # caminhos dos produtos resgatados
 {
 echo "== analises $(date '+%Y-%m-%d %H:%M') | git $(git describe --tags --always --dirty 2>/dev/null)"
 echo; echo "######## exploratoria"; $PY -u analise/exploratoria.py
