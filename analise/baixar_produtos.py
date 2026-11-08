@@ -23,6 +23,10 @@ Uso (de dentro da pasta do gfuse3, com o disco Elements montado em
   python analise/baixar_produtos.py                    merge, pdir e gsmap em paralelo
   python analise/baixar_produtos.py --produto hydro    hidroestimador (demorado)
 
+O PDIR-Now vem de um servidor lento (cerca de 20 horas de dado por hora de
+download em sequência); --paralelo N baixa N horas ao mesmo tempo:
+  python analise/baixar_produtos.py --produto pdir --paralelo 6
+
 Saída: logs/baixar_produtos.log (log único; cada produto também deixa o seu
 log em logs/baixar_<produto>.log enquanto roda).
 """
@@ -112,7 +116,7 @@ def DX_indice(base, origem):
     novo.to_csv(idx, index=False)
 
 
-def um_produto(produto, dry, kinds):
+def um_produto(produto, dry, kinds, paralelo=1):
     DX, DM = importar_gfuse2()
     t = stems_utc()
     print(f"[{produto}] stems do gfuse3: {len(t):,} ({t.min()} a {t.max()} UTC)")
@@ -127,7 +131,15 @@ def um_produto(produto, dry, kinds):
         h = falta(horas, cam)
         print(f"[pdir] {len(h)} de {len(horas)} horas sem arquivo")
         if h and not dry:
-            DX.baixa_pdir(h, False, False)
+            if paralelo <= 1:
+                DX.baixa_pdir(h, False, False)
+            else:
+                from concurrent.futures import ThreadPoolExecutor
+                partes = [h[i::paralelo] for i in range(paralelo)]
+                print(f"[pdir] {paralelo} downloads simultâneos", flush=True)
+                with ThreadPoolExecutor(paralelo) as ex:
+                    list(ex.map(lambda x: DX.baixa_pdir(x, False, False), partes))
+                print("[pdir] FIM", flush=True)
     elif produto == "gsmap":
         for k in kinds:
             cam = lambda x, k=k: (DX.GSMAP_DIR / k / f"{(x-um).year}" / f"{(x-um).month:02d}"
@@ -153,12 +165,14 @@ def main():
                     choices=["merge", "pdir", "gsmap", "hydro"])
     ap.add_argument("--gsmap-kinds", nargs="+", default=["nrt", "gauge", "now"])
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--paralelo", type=int, default=1,
+                    help="downloads simultâneos do PDIR-Now")
     ap.add_argument("--filho", action="store_true", help=argparse.SUPPRESS)
     a = ap.parse_args()
 
     if a.filho or len(a.produto) == 1 or a.dry_run:
         for p in a.produto:
-            um_produto(p, a.dry_run, a.gsmap_kinds)
+            um_produto(p, a.dry_run, a.gsmap_kinds, a.paralelo)
         return
 
     # vários produtos: um processo por produto, em paralelo, e um log único no fim
@@ -168,7 +182,7 @@ def main():
     for p in a.produto:
         log = open(LOGS / f"baixar_{p}.log", "w")
         cmd = [sys.executable, "-u", __file__, "--filho", "--produto", p,
-               "--gsmap-kinds", *a.gsmap_kinds]
+               "--gsmap-kinds", *a.gsmap_kinds, "--paralelo", str(a.paralelo)]
         procs[p] = (subprocess.Popen(cmd, cwd=RAIZ, stdout=log, stderr=subprocess.STDOUT), log)
         print(f"[baixar] {p} iniciado (log em logs/baixar_{p}.log)", flush=True)
     for p, (pr, log) in procs.items():
