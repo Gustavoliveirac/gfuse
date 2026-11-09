@@ -90,7 +90,8 @@ def painel_fontes(b, it, titulo_arq, fs, destaque=None, extras=None):
     campos = {"rrqpe": (rrqpe_hora(b, it), glat, glon, "goes")}
     for n, f in fs.items():
         try:
-            c = f.window_mm(t_brt, 60)
+            t_f = t_brt.floor("30min") if n == "imerg_early" else t_brt
+            c = f.window_mm(t_f, 60)
             if c is not None:
                 la, lo = latlon_fonte(f)
                 campos[n] = (np.asarray(c, float), la, lo, "imerg")
@@ -156,14 +157,16 @@ def dominio(b, fs=None):
     M.mapa_base(ax, x0, x1, y0, y1)
     M.contorno(ax, *contorno_dom(), color="k", lw=1.6)
     M.contorno(ax, *contorno_dom(K.MARGEM_KM), color="k", lw=0.8, ls="--")
+    fontes = sorted(set(b["fonte"]))
     for papel in ("fora", "contexto", "alvo", "holdout"):
-        for fonte, mk in MARC.items():
+        for fonte in fontes:
+            mk = MARC.get(fonte.replace("CEMADEM", "CEMADEN"), "o")
             for tipo in (0, 1):
                 m = (b["papel"] == papel) & (b["fonte"] == fonte) & (b["tipo"] == tipo)
                 if m.any():
                     M.marca(ax, b["lat"][m], b["lon"][m], marker=mk if tipo == 0 else "v",
                             s=46 if papel == "holdout" else 30, color=COR_PAPEL[papel], edgecolors="k",
-                            linewidths=0.4, label=f"{fonte}{' horária' if tipo else ''}, {NOME_PAPEL[papel]} ({m.sum()})")
+                            linewidths=0.4, label=f"{fonte.replace('CEMADEM', 'CEMADEN')}{' horária' if tipo else ''}, {NOME_PAPEL[papel]} ({m.sum()})")
     M.marca(ax, K.BH_LAT, K.BH_LON, marker="+", s=120, color="k")
     ax.plot([], [], color="k", lw=1.6, label="domínio (128 km)")
     ax.plot([], [], color="k", lw=0.8, ls="--", label=f"faixa de {K.MARGEM_KM:g} km fora das métricas")
@@ -197,8 +200,17 @@ def limite(b, fs):
 def tolerancia(b, fs):
     A, ok = janela(b, 60)
     alvo = b["papel"][b["i10"]] == "alvo"
+    px, py = b["px"][b["i10"]], b["py"][b["i10"]]
+    d_km = np.hypot(px[:, None] - px[None, :], py[:, None] - py[None, :]) * K.KM_PER_PX
+    viz = (d_km > 0) & (d_km <= 10)
     cand = np.where(ok[:, None] & alvo[None, :], A, np.nan)
-    it = int(np.nanargmax(np.nanmax(cand, 1)))
+    ordem = np.argsort(-np.nan_to_num(np.nanmax(cand, 1), nan=-1))
+    it = int(ordem[0])
+    for i in ordem[:500]:
+        j = int(np.nanargmax(cand[i]))
+        vz = A[i][viz[j]]
+        if np.isfinite(vz).any() and np.nanmax(vz) >= 0.3 * cand[i, j] and cand[i, j] >= 20:
+            it = int(i); break
     obs = obs_hora(b, it)
 
     def extra(ax):
