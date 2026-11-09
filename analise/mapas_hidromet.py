@@ -141,7 +141,7 @@ def desenha_campo(ax, campo, lat2d, lon2d, tipo="goes", n_saida=400):
         c = np.nan_to_num(c, nan=0.0)
         c = grey_closing(c, size=3)
         c = suaviza(c, 0.7)
-    else:
+    elif tipo != "modelo":                 # campos das redes já são contínuos
         c = suaviza(c, 0.8)
     x, y = _LL2M.transform(np.asarray(lon2d, float).ravel(), np.asarray(lat2d, float).ravel())
     x0, x1, y0, y1 = ax.get_xlim() + ax.get_ylim()
