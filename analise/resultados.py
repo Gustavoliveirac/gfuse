@@ -128,5 +128,35 @@ def main():
             fig.tight_layout(); fig.savefig(FIG / f"desempenho_{agg}.png", dpi=150); plt.close(fig)
 
 
+def complementos(ver):
+    """Núcleos ponto a ponto e com tolerância; desempenho por distância à estação de entrada."""
+    for agg in (10, 30, 60):
+        f = RES / f"nucleos_{agg}.csv"
+        if f.exists():
+            d = pd.read_csv(f)
+            d = d[(d.get("subconjunto", "todos") == "todos") & d["produto"].isin(NOMES)]
+            t = d.pivot_table(index=["produto", "tau_mm"], columns="raio_km", values="CSI_best").reset_index()
+            t.insert(1, "nome", t["produto"].map(NOMES)); t["versao_codigo"] = ver
+            t.to_csv(SAI / f"nucleos_tolerancia_{agg}.csv", index=False)
+            print(f"\nnúcleos por tolerância ({agg} min, CSI no melhor corte):")
+            print(t.drop(columns=["versao_codigo"]).round(3).to_string(index=False))
+        e = RES / f"escada_{agg}.csv"
+        if e.exists():
+            d = pd.read_csv(e)
+            d.to_csv(SAI / f"escada_{agg}.csv", index=False)
+        g = RES / f"skill_dist_{agg}.csv"
+        if g.exists():
+            d = pd.read_csv(g)
+            d = d[d["produto"].isin(NOMES)]
+            t = d.pivot_table(index="faixa_km", columns="produto", values=["CSI", "r"])
+            t.columns = [f"{a}_{b}" for a, b in t.columns]
+            t = t.reset_index(); t["versao_codigo"] = ver
+            t.to_csv(SAI / f"desempenho_distancia_{agg}.csv", index=False)
+            print(f"\ndesempenho por distância à estação de entrada mais próxima ({agg} min):")
+            cols = [c for c in t.columns if c.startswith("CSI_") and c[4:] in ("s2rk", "s1_rk", "sk", "idw", "base")]
+            print(t[["faixa_km"] + cols].round(3).to_string(index=False))
+
+
 if __name__ == "__main__":
     main()
+    complementos(versao())
