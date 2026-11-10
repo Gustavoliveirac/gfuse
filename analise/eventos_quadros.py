@@ -32,6 +32,7 @@ LINHAS = [("sk", "Krigagem das estações de entrada"), ("s2rk", "GFUSE"), ("s1_
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument("--stem"); ap.add_argument("--horas", type=int, default=5)
+    ap.add_argument("--saida", default="evento_quadros")
     a = ap.parse_args()
     SAI.mkdir(parents=True, exist_ok=True)
     stem = a.stem or pd.read_csv(RES / "analise" / "eventos_produtos_60.csv")["goes_stem"].astype(str).iloc[0]
@@ -92,8 +93,8 @@ def main():
         linhas_csv.append(dict(goes_stem=s, bloco=f, max_obs=float(np.nanmax(obs))))
     H.legendas(fig, fig.add_axes([0.1, 0.04, 0.35, 0.012]), fig.add_axes([0.55, 0.04, 0.35, 0.012]))
     fig.text(0.5, 0.012, "círculos: estações de avaliação; triângulos: estações de validação espacial", ha="center", fontsize=8)
-    fig.savefig(SAI / "evento_quadros.png", dpi=150, bbox_inches="tight"); plt.close(fig)
-    pd.DataFrame(linhas_csv).to_csv(SAI / "evento_quadros.csv", index=False)
+    fig.savefig(SAI / f"{a.saida}.png", dpi=150, bbox_inches="tight"); plt.close(fig)
+    pd.DataFrame(linhas_csv).to_csv(SAI / f"{a.saida}.csv", index=False)
     print("FIM", sel)
 
 
