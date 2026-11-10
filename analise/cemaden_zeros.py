@@ -60,8 +60,13 @@ def diagnostico():
         if s is None or s.empty:
             continue
         s = s.sort_values("date")
+        anos = s.groupby(s["date"].dt.year)["rainfall"].apply(lambda x: x.notna().mean())
+        s = s[s["rainfall"].notna()]
+        if s.empty:
+            continue
         dt = s["date"].diff().dt.total_seconds().div(60).dropna()
         lin.append(dict(cod=c, rede=REDE.get(f, f), n_registros=len(s), primeiro=s["date"].min(),
+                        **{f"com_valor_{a}": round(v, 3) for a, v in anos.items()},
                         ultimo=s["date"].max(), gap_mediano_min=dt.median(),
                         frac_gap_10=float((dt <= 10.5).mean()), frac_gap_60=float(((dt > 50) & (dt <= 70)).mean()),
                         frac_gap_maior_70=float((dt > 70).mean()), frac_zero=float((s["rainfall"] == 0).mean())))
@@ -70,8 +75,11 @@ def diagnostico():
     print(d.groupby("rede")[["gap_mediano_min", "frac_gap_10", "frac_gap_60", "frac_gap_maior_70", "frac_zero"]]
           .median().round(3).to_string())
     print(f"\nbase do gfuse3: {t_base.min()} a {t_base.max()}")
-    ana = d[d.rede == "ANA"][["cod", "primeiro", "ultimo", "n_registros"]].sort_values("primeiro")
-    print("\nANA, primeiro e último registro da série bruta:")
+    cols = [c for c in d.columns if c.startswith("com_valor_")]
+    print("\nfração de registros com valor, por ano (mediana das estações):")
+    print(d.groupby("rede")[cols].median().round(3).to_string())
+    ana = d[d.rede == "ANA"][["cod", "primeiro", "ultimo", "n_registros"] + cols].sort_values("primeiro")
+    print("\nANA, primeiro registro com valor e fração com valor por ano:")
     print(ana.to_string(index=False))
 
 
@@ -90,9 +98,12 @@ def preencher():
         if s is None or s.empty:
             continue
         s = s.sort_values("date")
+        inval_df = s
+        s = s[s["rainfall"].notna()]                 # só os envios com valor; linhas vazias não são envio
         tr = s["date"].values.astype("datetime64[ns]")
-        inval = set(s.loc[pd.to_numeric(s.get("status_final", 0), errors="coerce").fillna(0) > K.QAQC_STATUS_MAX,
-                          "date"].values.astype("datetime64[ns]"))
+        s_inv = inval_df
+        inval = set(s_inv.loc[pd.to_numeric(s_inv.get("status_final", 0), errors="coerce").fillna(0) > K.QAQC_STATUS_MAX,
+                              "date"].values.astype("datetime64[ns]"))
         antes = 0
         for k in range(nf):
             tau = (t - pd.to_timedelta((nf - 1 - k) * 10, unit="min")).values.astype("datetime64[ns]")
@@ -159,7 +170,11 @@ def avaliar():
     for f in K.RES.iterdir():
         if f.is_file() and f.suffix == ".csv" and not (RES0 / f.name).exists():
             shutil.copy(f, RES0 / f.name)
+    import os
+    janelas = [int(x) for x in os.environ.get("CEM0_JANELAS", "60 30 10").split()]
     for agg, bracos in ((60, ["s1", "s2rk"]), (30, ["s1", "s2rk"]), (10, ["s1"])):
+        if agg not in janelas:
+            continue
         for b in bracos:
             for fold in range(K.K_FOLDS):
                 if not (K.CKPT_DIR / f"m{agg}" / f"{b}_f{fold}.pt").exists():

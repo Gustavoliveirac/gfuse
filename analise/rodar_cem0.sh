@@ -9,6 +9,7 @@ mkdir -p logs resultados/analise/cem0
 PY=${PYTHON:-python}; C=$(date +%Y%m%d_%H%M); LOG=logs/cem0.log
 {
 echo "== cem0 $(date '+%Y-%m-%d %H:%M') | git $(git describe --tags --always --dirty 2>/dev/null)"
+rm -rf processados_cem0 resultados_cem0   # a rodada anterior preencheu também as falhas reais
 $PY -u analise/cemaden_zeros.py tudo
 echo "== fim $(date '+%Y-%m-%d %H:%M')"
 } 2>&1 | tee "$LOG"
