@@ -20,14 +20,17 @@ import matplotlib.pyplot as plt
 import torch
 import comum as C, modelo as Mo, mapas_hidromet as H
 import campos_gfuse as CG
+import cemig
+import functools
+CG.carregar_rede = functools.lru_cache(maxsize=None)(CG.carregar_rede)
 from config3 import PROC, RES
 from estacoes import Base
 from exploratoria import base as base_expl
 from figuras import obs_hora
 
 SAI = RES / "analise" / "v7"
-LINHAS = [("sk", "Krigagem das estações de entrada"), ("s2rk", "GFUSE"), ("s1_rk", "Satélite corrigido"),
-          ("rrqpe", "GOES-16 RRQPE"), ("imerg_early", "IMERG Early"), ("merge", "MERGE CPTEC")]
+LINHAS = [("imerg_early", "IMERG Early"), ("rrqpe", "GOES-16 RRQPE"), ("sk", "Krigagem das estações"),
+          ("s1_rk", "Satélite corrigido"), ("s2rk", "GFUSE"), ("merge", "MERGE CPTEC"), ("cemig", "Radar Cemig")]
 
 
 def main():
@@ -68,6 +71,9 @@ def main():
                         campos[n] = (np.asarray(c, float), la, lo)
                 except Exception:
                     pass
+        rad = cemig.hora(tb + pd.Timedelta(hours=3))
+        if rad is not None:
+            campos["cemig"] = rad
         obs = obs_hora(be, idx[s])
         t_utc = tb + pd.Timedelta(hours=3)
         for i, (nome, rot) in enumerate(LINHAS):
@@ -77,9 +83,11 @@ def main():
             v = campos.get(nome)
             if v is not None:
                 if isinstance(v, tuple):
-                    H.desenha_campo(ax, v[0], v[1], v[2], tipo="imerg")
+                    H.desenha_campo(ax, v[0], v[1], v[2], tipo="modelo" if nome == "cemig" else "imerg")
                 else:
                     H.desenha_campo(ax, v, glat, glon, tipo="goes" if nome == "rrqpe" else "modelo")
+            else:
+                ax.text(0.5, 0.5, "sem dado", transform=ax.transAxes, ha="center", va="center", fontsize=8, color="0.3")
             for pap, mk in (("alvo", "o"), ("holdout", "^")):
                 m = papel == pap
                 xs, ys = H._LL2M.transform(be["lon"][m], be["lat"][m])
@@ -90,7 +98,7 @@ def main():
                 ax.set_title(f"{(t_utc - pd.Timedelta(hours=1)):%d/%m %H:%M} a {t_utc:%H:%M} UTC", fontsize=8)
             if j == 0:
                 ax.set_ylabel(rot, fontsize=8)
-        linhas_csv.append(dict(goes_stem=s, bloco=f, max_obs=float(np.nanmax(obs))))
+        linhas_csv.append(dict(goes_stem=s, bloco=f, max_obs=float(np.nanmax(obs)), cemig="cemig" in campos))
     H.legendas(fig, fig.add_axes([0.1, 0.04, 0.35, 0.012]), fig.add_axes([0.55, 0.04, 0.35, 0.012]))
     fig.text(0.5, 0.012, "círculos: estações de avaliação; triângulos: estações de validação espacial", ha="center", fontsize=8)
     fig.savefig(SAI / f"{a.saida}.png", dpi=150, bbox_inches="tight"); plt.close(fig)

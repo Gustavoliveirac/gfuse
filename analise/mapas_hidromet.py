@@ -35,17 +35,24 @@ SEM_CHUVA, SEM_DADO = "#bdbdbd", "#777777"
 ALPHA_CAMPO = 0.6
 
 
+ESCALA_UNICA = True   # campos e estações na mesma escala de 0 a 30 mm em 1 h
+
+
 def rgba_campo(v):
-    """mm/h -> RGBA, interpolado linearmente; < 0,1 transparente."""
+    """mm/h -> RGBA, interpolado linearmente; < 0,1 transparente; rampa de opacidade até 1 mm/h."""
     v = np.asarray(v, float)
-    xs = np.array([c[0] for c in CAMPO])
-    cores = np.array([to_rgb(c[1]) for c in CAMPO])
-    alf = np.array([c[2] for c in CAMPO])
+    if ESCALA_UNICA:
+        xs = np.array([0.1, 0.2] + [e[0] for e in EST[1:]])
+        cores = np.array([to_rgb(EST[0][1]), to_rgb(EST[0][1])] + [to_rgb(e[1]) for e in EST[1:]])
+        alf = np.interp(xs, [0.1, 1.0], [0.0, 1.0])
+    else:
+        xs = np.array([c[0] for c in CAMPO]); cores = np.array([to_rgb(c[1]) for c in CAMPO])
+        alf = np.array([c[2] for c in CAMPO])
     vv = np.clip(np.nan_to_num(v, nan=0.0), xs[0], xs[-1])
     out = np.zeros(v.shape + (4,))
     for k in range(3):
         out[..., k] = np.interp(vv, xs, cores[:, k])
-    out[..., 3] = np.interp(vv, xs, alf) * ALPHA_CAMPO
+    out[..., 3] = np.interp(vv, xs, alf) * (0.75 if ESCALA_UNICA else ALPHA_CAMPO)
     out[..., 3][~(np.nan_to_num(v, nan=0) >= 0.1)] = 0
     return out
 
@@ -143,11 +150,25 @@ def desenha_campo(ax, campo, lat2d, lon2d, tipo="goes", n_saida=400):
         c = suaviza(c, 0.7)
     elif tipo != "modelo":                 # campos das redes já são contínuos
         c = suaviza(c, 0.8)
-    x, y = _LL2M.transform(np.asarray(lon2d, float).ravel(), np.asarray(lat2d, float).ravel())
     x0, x1, y0, y1 = ax.get_xlim() + ax.get_ylim()
     gx, gy = np.meshgrid(np.linspace(x0, x1, n_saida), np.linspace(y1, y0, n_saida))
-    f = LinearNDInterpolator(np.c_[x, y], c.ravel())
-    img = rgba_campo(f(gx, gy))
+    la2, lo2 = np.asarray(lat2d, float), np.asarray(lon2d, float)
+    regular = la2.ndim == 2 and np.allclose(la2, la2[:, :1]) and np.allclose(lo2, lo2[:1, :])
+    if regular:                      # grade lat/lon regular (radar, IMERG): interpolação direta, rápida
+        from scipy.interpolate import RegularGridInterpolator
+        lat1, lon1 = la2[:, 0], lo2[0, :]
+        cc = c
+        if lat1[0] > lat1[-1]:
+            lat1, cc = lat1[::-1], cc[::-1]
+        if lon1[0] > lon1[-1]:
+            lon1, cc = lon1[::-1], cc[:, ::-1]
+        glo, gla = _M2LL.transform(gx, gy)
+        f = RegularGridInterpolator((lat1, lon1), cc, bounds_error=False, fill_value=np.nan)
+        img = rgba_campo(f(np.c_[gla.ravel(), glo.ravel()]).reshape(gx.shape))
+    else:
+        x, y = _LL2M.transform(lo2.ravel(), la2.ravel())
+        f = LinearNDInterpolator(np.c_[x, y], c.ravel())
+        img = rgba_campo(f(gx, gy))
     ax.imshow(img, extent=(x0, x1, y0, y1), zorder=2, interpolation="bilinear")
     ax.set_xlim(x0, x1); ax.set_ylim(y0, y1)
 
@@ -179,18 +200,28 @@ def circulo_km(ax, lat, lon, r_km, **kw):
 
 
 def legendas(fig, ax_campo=None, ax_est=None):
-    """Colorbar do campo (estimativa de satélite) e das estações (pluviômetro)."""
+    """Com a escala única, uma só barra para satélite, radar e pluviômetros."""
     from matplotlib.cm import ScalarMappable
     from matplotlib.colors import Normalize
+    if ESCALA_UNICA:
+        cm = LinearSegmentedColormap.from_list("est", [(i / 4, to_rgb(e[1])) for i, e in enumerate(EST)])
+        for ax in (ax_campo,):
+            if ax is None:
+                continue
+            cb = fig.colorbar(ScalarMappable(Normalize(0, 4), cm), cax=ax, orientation="horizontal")
+            cb.set_ticks(range(5)); cb.set_ticklabels(["0,2", "1", "10", "20", "30+"])
+            cb.set_label("Chuva em 1 h (mm): campos e pluviômetros na mesma escala", fontsize=7)
+            cb.ax.tick_params(labelsize=6)
+        if ax_est is not None:
+            ax_est.axis("off")
+        return
     if ax_campo is not None:
-        xs = np.linspace(0, 60, 601)
-        cm = LinearSegmentedColormap.from_list("campo", [(x / 60, tuple(rgba_campo(x)[:3]) if x >= 1 else
-                                                          tuple(rgba_campo(1)[:3])) for x in [0, 1, 2, 3, 4, 6, 8, 10, 12.5, 15, 17.5, 20, 22.5, 25, 27.5, 30, 40, 50, 60]])
+        cm = LinearSegmentedColormap.from_list("campo", [(x / 60, tuple(rgba_campo(max(x, 1))[:3])) for x in
+                                                         [0, 1, 2, 3, 4, 6, 8, 10, 12.5, 15, 17.5, 20, 22.5, 25, 27.5, 30, 40, 50, 60]])
         cb = fig.colorbar(ScalarMappable(Normalize(0, 60), cm), cax=ax_campo, orientation="horizontal")
         cb.set_ticks([0, 10, 20, 30, 40, 50, 60]); cb.set_label("Chuva (mm/h), estimativa de satélite", fontsize=7)
         cb.ax.tick_params(labelsize=6)
     if ax_est is not None:
-        pos = [0.2, 1, 10, 20, 30]
         cm = LinearSegmentedColormap.from_list("est", [(i / 4, to_rgb(e[1])) for i, e in enumerate(EST)])
         cb = fig.colorbar(ScalarMappable(Normalize(0, 4), cm), cax=ax_est, orientation="horizontal")
         cb.set_ticks(range(5)); cb.set_ticklabels(["0,2", "1", "10", "20", "30+"])
