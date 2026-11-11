@@ -9,10 +9,14 @@ mkdir -p logs resultados/analise/cem0
 PY=${PYTHON:-python}; C=$(date +%Y%m%d_%H%M); LOG=logs/cem0.log
 {
 echo "== cem0 $(date '+%Y-%m-%d %H:%M') | git $(git describe --tags --always --dirty 2>/dev/null)"
-rm -rf processados_cem0 resultados_cem0   # a rodada anterior preencheu também as falhas reais
-$PY -u analise/cemaden_zeros.py tudo
+if [ "$1" = "--continuar" ]; then
+  for e in avaliar resumir sem_ana; do $PY -u analise/cemaden_zeros.py $e; done
+else
+  rm -rf processados_cem0 resultados_cem0
+  $PY -u analise/cemaden_zeros.py tudo
+fi
 echo "== fim $(date '+%Y-%m-%d %H:%M')"
-} 2>&1 | tee "$LOG"
+} 2>&1 | tee -a "$LOG"
 cp "$LOG" resultados/analise/cem0/
 Z=logs/cem0_$C.zip; (cd resultados/analise && zip -qr "../../$Z" cem0)
 echo "DEVOLVER: $Z ($(du -h "$Z" | cut -f1))"

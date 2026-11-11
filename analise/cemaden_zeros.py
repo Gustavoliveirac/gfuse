@@ -206,9 +206,43 @@ def resumir():
     print(d.pivot_table(index=["janela", "produto"], columns="metrica", values="original").round(3).to_string())
 
 
+def sem_ana():
+    """Métricas nas estações de avaliação com e sem a ANA, a partir dos pares da base preenchida.
+    A série da ANA tem um valor a cada 30 min na grade de 10 min do QA/QC (o envio é de 15 min),
+    e o alinhamento com tolerância de 12 min repete esse valor em até três instantes de 10 min."""
+    import produtos as Pr
+    z = np.load(PROC0 / Path(K.EST_NPZ).name, allow_pickle=False)
+    chave = {(round(float(x), 3), round(float(y), 3)): REDE.get(f, f) for x, y, f in
+             zip(z["px"], z["py"], z["fonte"].astype(str))}
+    lin = []
+    for agg in (60, 30):
+        for braco, cols in (("s2rk", [("GFUSE", "mm_w0")]), ("s1", [("estimador por satélite", "mm_w0")]),
+                            ("s1_rk", [("satélite corrigido", "mm_w0")])):
+            fs = sorted((RES0 / "pares" / f"m{agg}").glob(f"{braco}_f[0-9].parquet"))
+            if not fs:
+                continue
+            d = pd.concat([pd.read_parquet(f) for f in fs], ignore_index=True)
+            d = d[d["lado"] == "alvo"]
+            d["rede"] = [chave.get((round(float(x), 3), round(float(y), 3)), "?") for x, y in zip(d["px"], d["py"])]
+            pcol = next((c for c in d.columns if c.startswith("p0.2") and c.endswith("_w0")), None)
+            extra = [("krigagem simples", "sk_w0"), ("IDW", "idw_w0"), ("RRQPE", "rrq_w0")] if braco == "s2rk" else []
+            for rotulo, sub in (("todas", d), ("sem ANA", d[d["rede"] != "ANA"]), ("só ANA", d[d["rede"] == "ANA"])):
+                for nome, c in cols + extra:
+                    if c not in sub:
+                        continue
+                    usa_p = pcol is not None and c == "mm_w0"
+                    m = Pr.metricas(sub[c].values, sub["obs"].values, sub[pcol].values if usa_p else None,
+                                    sub["thr_chuva"].values if usa_p and "thr_chuva" in sub else None)
+                    lin.append(dict(janela=agg, estacoes=rotulo, produto=nome, **m))
+    t = pd.DataFrame(lin)
+    t.to_csv(SAI / "metricas_com_e_sem_ana.csv", index=False)
+    print(t.pivot_table(index=["janela", "produto"], columns="estacoes", values="r").round(3).to_string())
+    print(t.pivot_table(index=["janela", "produto"], columns="estacoes", values="csi").round(3).to_string())
+
+
 if __name__ == "__main__":
     SAI.mkdir(parents=True, exist_ok=True)
     etapa = sys.argv[1] if len(sys.argv) > 1 else "tudo"
-    for e in (["diagnostico", "preencher", "avaliar", "resumir"] if etapa == "tudo" else [etapa]):
+    for e in (["diagnostico", "preencher", "avaliar", "resumir", "sem_ana"] if etapa == "tudo" else [etapa]):
         print(f"\n===== {e} =====", flush=True)
         globals()[e]()
