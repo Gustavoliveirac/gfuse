@@ -35,7 +35,7 @@ SEM_CHUVA, SEM_DADO = "#bdbdbd", "#777777"
 ALPHA_CAMPO = 0.6
 
 
-ESCALA_UNICA = True   # campos e estações na mesma escala de 0 a 30 mm em 1 h
+ESCALA_UNICA = False  # campos com a escala do hidromet limitada a 30+, estações com a escala própria
 
 
 def rgba_campo(v):
@@ -46,8 +46,9 @@ def rgba_campo(v):
         cores = np.array([to_rgb(EST[0][1]), to_rgb(EST[0][1])] + [to_rgb(e[1]) for e in EST[1:]])
         alf = np.interp(xs, [0.1, 1.0], [0.0, 1.0])
     else:
-        xs = np.array([c[0] for c in CAMPO]); cores = np.array([to_rgb(c[1]) for c in CAMPO])
-        alf = np.array([c[2] for c in CAMPO])
+        cp = [c for c in CAMPO if c[0] <= 30]          # escala limitada a 30+: acima de 30 fica na cor de 30
+        xs = np.array([c[0] for c in cp]); cores = np.array([to_rgb(c[1]) for c in cp])
+        alf = np.array([c[2] for c in cp])
     vv = np.clip(np.nan_to_num(v, nan=0.0), xs[0], xs[-1])
     out = np.zeros(v.shape + (4,))
     for k in range(3):
@@ -216,10 +217,11 @@ def legendas(fig, ax_campo=None, ax_est=None):
             ax_est.axis("off")
         return
     if ax_campo is not None:
-        cm = LinearSegmentedColormap.from_list("campo", [(x / 60, tuple(rgba_campo(max(x, 1))[:3])) for x in
-                                                         [0, 1, 2, 3, 4, 6, 8, 10, 12.5, 15, 17.5, 20, 22.5, 25, 27.5, 30, 40, 50, 60]])
-        cb = fig.colorbar(ScalarMappable(Normalize(0, 60), cm), cax=ax_campo, orientation="horizontal")
-        cb.set_ticks([0, 10, 20, 30, 40, 50, 60]); cb.set_label("Chuva (mm/h), estimativa de satélite", fontsize=7)
+        cm = LinearSegmentedColormap.from_list("campo", [(x / 30, tuple(rgba_campo(max(x, 1))[:3])) for x in
+                                                         [0, 1, 2, 3, 4, 6, 8, 10, 12.5, 15, 17.5, 20, 22.5, 25, 27.5, 30]])
+        cb = fig.colorbar(ScalarMappable(Normalize(0, 30), cm), cax=ax_campo, orientation="horizontal")
+        cb.set_ticks([0, 10, 20, 30]); cb.set_ticklabels(["0", "10", "20", "30+"])
+        cb.set_label("Chuva (mm/h), estimativa de satélite, radar e modelos", fontsize=7)
         cb.ax.tick_params(labelsize=6)
     if ax_est is not None:
         cm = LinearSegmentedColormap.from_list("est", [(i / 4, to_rgb(e[1])) for i, e in enumerate(EST)])

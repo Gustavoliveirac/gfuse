@@ -23,6 +23,22 @@ import campos_gfuse as CG
 import cemig
 import functools
 CG.carregar_rede = functools.lru_cache(maxsize=None)(CG.carregar_rede)
+_campos_orig = CG.campos_modelos
+
+
+def _campos_cache(stem, fold, *a, **k):
+    """Guarda os campos dos modelos de cada instante; refazer a figura não roda o modelo de novo."""
+    pasta = RES / "analise" / "v8_eventos" / "cache"; pasta.mkdir(parents=True, exist_ok=True)
+    f = pasta / f"{stem}.npz"
+    if f.exists():
+        z = np.load(f)
+        return {n: z[n] for n in z.files}, None, None
+    campos, probs, inf = _campos_orig(stem, fold, *a, **k)
+    np.savez_compressed(f, **{n: np.asarray(v) for n, v in campos.items() if not isinstance(v, tuple)})
+    return campos, probs, inf
+
+
+CG.campos_modelos = _campos_cache
 from config3 import PROC, RES
 from estacoes import Base
 from exploratoria import base as base_expl

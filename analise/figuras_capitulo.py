@@ -40,9 +40,9 @@ import mapas_hidromet as H                              # noqa: E402
 SAI = RAIZ / "resultados" / "analise" / "figuras_capitulo"
 AN = RAIZ / "resultados" / "analise"
 REDE = {"CEMADEM": "CEMADEN"}
-COR_REDE = {"ANA": "#1b9e77", "CEMADEN": "#d95f02", "SUDECAP": "#7570b3"}
-FORMA = {"holdout": ("^", "validação espacial"), "alvo": ("o", "avaliação"), "contexto": ("s", "entrada"),
-         "fora": ("x", "fora do recorte")}
+COR_PAPEL = {"holdout": "#d62728", "alvo": "#ff7f0e", "contexto": "#1f77b4", "fora": "#8c8c8c"}
+NOME_PAPEL = {"holdout": "validação espacial", "alvo": "avaliação", "contexto": "entrada", "fora": "fora do recorte"}
+SIMB_REDE = {"ANA": "^", "CEMADEN": "o", "SUDECAP": "s"}
 
 
 def base():
@@ -51,23 +51,22 @@ def base():
 
 
 def dominio(b):
+    """Símbolo pela rede e cor pelo papel."""
     from figuras import contorno_dom
     x0, x1, y0, y1 = H.caixa(b["lat"], b["lon"], folga_km=6)
     fig, ax = plt.subplots(figsize=(8.5, 8.5))
     H.mapa_base(ax, x0, x1, y0, y1)
     H.contorno(ax, *contorno_dom(), color="k", lw=1.6)
     redes = np.array([REDE.get(f, f) for f in b["fonte"]])
-    for papel, (mk, _) in FORMA.items():
-        for rede, cor in COR_REDE.items():
+    for papel, cor in COR_PAPEL.items():
+        for rede, mk in SIMB_REDE.items():
             m = (b["papel"] == papel) & (redes == rede)
             if m.any():
-                kw = dict(marker=mk, s=40 if papel == "holdout" else 26, color=cor, linewidths=0.8 if mk == "x" else 0.4)
-                if mk != "x":
-                    kw["edgecolors"] = "k"
-                H.marca(ax, b["lat"][m], b["lon"][m], **kw)
+                H.marca(ax, b["lat"][m], b["lon"][m], marker=mk, s=44 if papel == "holdout" else 30, color=cor,
+                        edgecolors="k", linewidths=0.5)
     H.marca(ax, K.BH_LAT, K.BH_LON, marker="+", s=120, color="k")
-    l1 = [Line2D([], [], ls="", marker=mk, color="0.3", markeredgecolor="k", label=n) for mk, n in FORMA.values()]
-    l2 = [Line2D([], [], ls="", marker="o", color=c, markeredgecolor="k", label=r) for r, c in COR_REDE.items()]
+    l1 = [Line2D([], [], ls="", marker="o", color=c, markeredgecolor="k", label=NOME_PAPEL[p]) for p, c in COR_PAPEL.items()]
+    l2 = [Line2D([], [], ls="", marker=mk, color="0.6", markeredgecolor="k", label=r) for r, mk in SIMB_REDE.items()]
     leg = ax.legend(handles=l1, title="papel", fontsize=7, title_fontsize=7, loc="lower left", framealpha=0.92)
     ax.add_artist(leg)
     ax.legend(handles=l2 + [Line2D([], [], color="k", lw=1.6, label="domínio (128 km)")], title="rede",
