@@ -53,7 +53,7 @@ def _series(b):
 def qc_mes(b):
     lin = []
     for c, f, s in _series(b):
-        m = s[_tem(s["motivo"], 1)]
+        m = s[_tem(s["motivo"], 1) & s["rainfall"].notna()]      # só linhas com valor (a grade tem linhas vazias)
         if len(m):
             for mes, n in m.groupby(m["date"].dt.to_period("M")).size().items():
                 lin.append(dict(cod=c, rede=f, mes=str(mes), registros=int(n)))
@@ -67,7 +67,7 @@ def qc_bascula(b):
     for cod_regra, nome in ((16, "horaria"), (2, "10min")):
         melhor = None
         for c, f, s in _series(b):
-            m = _tem(s["motivo"], cod_regra)
+            m = _tem(s["motivo"], cod_regra) & s["rainfall"].notna()
             if m.any():
                 dia = s.loc[m, "date"].dt.floor("D").value_counts()
                 if melhor is None or dia.iloc[0] > melhor[3]:
@@ -100,7 +100,7 @@ def qc_mapas(b):
         H.mapa_base(ax, x0, x1, y0, y1)
         caso = None
         for c, f, s in _series(b):
-            m = _tem(s["motivo"], regra)
+            m = _tem(s["motivo"], regra) & s["rainfall"].notna()
             if m.any():
                 k = s.loc[m, "rainfall"].idxmax()
                 if caso is None or s.loc[k, "rainfall"] > caso[3]:
@@ -134,12 +134,30 @@ def nucleos_prod(b):
     for lado, x in d.groupby("lado"):
         o = x["obs"].values
         cols = [("GFUSE", "mm_w0"), ("krigagem simples", "sk_w0"), ("IDW", "idw_w0"), ("RRQPE", "rrq_w0")] + [(p, p) for p in prods]
+        def pcol(tau):
+            for c in x.columns:
+                if c.startswith("p") and c.endswith("_w0"):
+                    try:
+                        if float(c[1:-3]) == tau:
+                            return c
+                    except ValueError:
+                        pass
         for nome, c in cols:
             if c not in x:
                 continue
-            e = x[c].values
             for tau in (20, 30):
-                h = ((e >= tau) & (o >= tau)).sum(); m_ = ((e < tau) & (o >= tau)).sum(); fa = ((e >= tau) & (o < tau)).sum()
+                pc = pcol(tau) if nome == "GFUSE" else None
+                if pc is not None:          # GFUSE: probabilidade de passar do limiar, no corte de maior CSI
+                    melhor = None
+                    for corte in np.arange(0.05, 0.96, 0.05):
+                        e_ = x[pc].values >= corte
+                        h = (e_ & (o >= tau)).sum(); m_ = (~e_ & (o >= tau)).sum(); fa = (e_ & (o < tau)).sum()
+                        if melhor is None or h / max(h + m_ + fa, 1) > melhor[0]:
+                            melhor = (h / max(h + m_ + fa, 1), h, m_, fa)
+                    _, h, m_, fa = melhor
+                else:
+                    e = x[c].values
+                    h = ((e >= tau) & (o >= tau)).sum(); m_ = ((e < tau) & (o >= tau)).sum(); fa = ((e >= tau) & (o < tau)).sum()
                 lin.append(dict(lado={"alvo": "avaliação", "holdout": "validação espacial"}.get(lado, lado),
                                 produto=nome, limiar_mm=tau, csi=h / max(h + m_ + fa, 1), acertos=int(h),
                                 perdidos=int(m_), alarmes=int(fa)))

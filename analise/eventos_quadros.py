@@ -11,6 +11,7 @@ Sem --stem, usa o primeiro evento de resultados/analise/eventos_produtos_60.csv.
 Saída: resultados/analise/v7/evento_quadros.png e evento_quadros.csv
 """
 import argparse, sys
+from matplotlib.lines import Line2D
 from pathlib import Path
 import numpy as np, pandas as pd
 RAIZ = Path(__file__).resolve().parent.parent
