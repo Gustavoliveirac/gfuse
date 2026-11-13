@@ -83,7 +83,17 @@ def qc_bascula(b):
         s = brutas[c][1]
         sinal = s[_tem(s["motivo"], cod_regra) & s["rainfall"].notna() & (s["date"].dt.floor("D") == dia)]
         t_ini, t_fim = sinal["date"].min(), sinal["date"].max()
-        j0, j1 = t_ini - pd.Timedelta(hours=18), t_fim + pd.Timedelta(hours=6)
+        # estende para a sequência inteira de valores iguais (registros com chuva, sem quebra maior que 2 h)
+        nz = s[s["rainfall"].notna() & (s["rainfall"] > 0)].reset_index(drop=True)
+        val = float(sinal["rainfall"].mode().iloc[0])
+        k0 = nz.index[nz["date"] == t_ini][0]; k1 = nz.index[nz["date"] == t_fim][0]
+        while k0 > 0 and nz.loc[k0 - 1, "rainfall"] == val and (nz.loc[k0, "date"] - nz.loc[k0 - 1, "date"]) <= pd.Timedelta(hours=2):
+            k0 -= 1
+        while k1 < len(nz) - 1 and nz.loc[k1 + 1, "rainfall"] == val and (nz.loc[k1 + 1, "date"] - nz.loc[k1, "date"]) <= pd.Timedelta(hours=2):
+            k1 += 1
+        t_ini, t_fim = nz.loc[k0, "date"], nz.loc[k1, "date"]
+        dur = t_fim - t_ini
+        j0, j1 = t_ini - max(dur * 0.5, pd.Timedelta(hours=24)), t_fim + max(dur * 0.3, pd.Timedelta(hours=12))
         x = s[(s["date"] >= j0) & (s["date"] <= j1) & s["rainfall"].notna()].copy()
         x["seq"] = (x["date"] >= t_ini) & (x["date"] <= t_fim)
         d = {cc: np.hypot(pos[cc][0] - pos[c][0], pos[cc][1] - pos[c][1]) * K.KM_PER_PX for cc in brutas if cc != c and cc in pos}
@@ -92,7 +102,8 @@ def qc_bascula(b):
         fig, axs = plt.subplots(2, 1, figsize=(11, 6), sharex=True)
         axs[0].bar(x.loc[~x["seq"], "date"], x.loc[~x["seq"], "rainfall"], width=0.006, color="#4292c6", label="válido")
         axs[0].bar(x.loc[x["seq"], "date"], x.loc[x["seq"], "rainfall"], width=0.006, color="#d62728", label="sequência invalidada")
-        axs[0].set_title(f"{c} ({f.replace('CEMADEM', 'CEMADEN')})", fontsize=11); axs[0].set_ylabel("mm em 10 min"); axs[0].legend(fontsize=9)
+        axs[0].set_title(f"{c} ({f.replace('CEMADEM', 'CEMADEN')}), sequência de {t_ini:%d/%m %H:%M} a {t_fim:%d/%m %H:%M}", fontsize=11)
+        axs[0].text(-0.06, 1.08, "(a)" if nome == "horaria" else "(b)", transform=axs[0].transAxes, fontsize=16, weight="bold"); axs[0].set_ylabel("mm em 10 min"); axs[0].legend(fontsize=9)
         axs[1].bar(y["date"], y["rainfall"], width=0.006, color="0.4")
         axs[1].set_title(f"estação mais próxima, {viz}, a {d[viz]:.1f} km", fontsize=11); axs[1].set_ylabel("mm em 10 min")
         fig.autofmt_xdate(); fig.tight_layout(); fig.savefig(SAI / f"qc_bascula_{nome}.png", dpi=200); plt.close(fig)
@@ -136,11 +147,19 @@ def qc_mapas(b):
             vals.append(float(w.sum()) if len(w) else np.nan); la.append(pos[cc][0]); lo.append(pos[cc][1])
         vals, la, lo = np.array(vals), np.array(la), np.array(lo)
         ok = np.isfinite(vals)                      # estações sem dado na janela ficam fora
-        H.desenha_estacoes(ax, la[ok], lo[ok], vals[ok], rotulos=True, raio_pt=8)
+        xs, ys = H._LL2M.transform(lo[ok], la[ok])
+        for xi, yi, vv in zip(xs, ys, vals[ok]):     # marcador com o acumulado escrito dentro, inclusive zero
+            cor, _ = H.cor_estacao(vv)
+            txt = f"{vv:.1f}" if vv < 10 else f"{vv:.0f}"
+            ax.annotate(txt, (xi, yi), ha="center", va="center", fontsize=10, zorder=8,
+                        bbox=dict(boxstyle="round,pad=0.25", fc=cor, ec="k", lw=0.5),
+                        color="white" if vv >= 10 else "black")
         H.marca(ax, pos[c][0], pos[c][1], marker="X", s=160, color="m", edgecolors="white", linewidths=0.8)
         xx, yy = H._LL2M.transform(pos[c][1], pos[c][0])
-        ax.annotate(f"{v:.1f} mm", (xx, yy), xytext=(8, 8), textcoords="offset points", fontsize=11, color="m", weight="bold")
-        ax.set_title(f"{rot}: {c}, {ini:%d/%m/%Y %H:%M} a {t0:%H:%M}, {v:.1f} mm", fontsize=10)
+        ax.annotate(f"{v:.1f} mm", (xx, yy), xytext=(10, 10), textcoords="offset points", fontsize=14, color="m", weight="bold", zorder=9)
+        ax.set_title(f"{rot}: {c}, {ini:%d/%m/%Y %H:%M} a {t0:%H:%M}, {v:.1f} mm", fontsize=12)
+        ax.text(0.02, 0.97, "(" + "abcd"[list(ESCALA).index(regra)] + ")", transform=ax.transAxes, fontsize=18, weight="bold",
+                va="top", bbox=dict(fc="white", ec="none", alpha=0.8))
         lin.append(dict(escala=rot, cod=c, inicio=ini, fim=t0, acumulado_mm=v))
     fig.tight_layout(); fig.savefig(SAI / "qc_mapas_nao_confirmados.png", dpi=170); plt.close(fig)
     pd.DataFrame(lin).to_csv(SAI / "qc_mapas_nao_confirmados.csv", index=False)
