@@ -56,7 +56,8 @@ def qc_mes(b):
         m = s[_tem(s["motivo"], 1) & s["rainfall"].notna()]      # só linhas com valor (a grade tem linhas vazias)
         if len(m):
             for mes, n in m.groupby(m["date"].dt.to_period("M")).size().items():
-                lin.append(dict(cod=c, rede=f, mes=str(mes), registros=int(n)))
+                tot = s.loc[s["date"].dt.to_period("M") == mes, "rainfall"].sum()
+                lin.append(dict(cod=c, rede=f, mes=str(mes), registros=int(n), total_mes_mm=round(float(tot), 1)))
     d = pd.DataFrame(lin).sort_values("registros", ascending=False)
     d.to_csv(SAI / "qc_limite_mensal.csv", index=False)
     print(d.head(10).to_string(index=False))

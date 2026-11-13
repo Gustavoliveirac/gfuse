@@ -65,6 +65,8 @@ def dominio(b):
                 H.marca(ax, b["lat"][m], b["lon"][m], marker=mk, s=44 if papel == "holdout" else 30, color=cor,
                         edgecolors="k", linewidths=0.5)
     inv = Path(__import__("os").environ.get("INVENTARIO", RAIZ / "logs" / "inventario_estacoes.csv"))
+    if not inv.exists():
+        inv = Path(__file__).resolve().parent / "inventario_estacoes.csv"   # cópia que vem com a entrega
     if inv.exists():                       # INMET a partir do inventário do hidromet
         iv = pd.read_csv(inv, sep=";", decimal=",")
         iv.columns = [c.lstrip("\ufeff") for c in iv.columns]

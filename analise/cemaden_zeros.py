@@ -172,7 +172,7 @@ def avaliar():
             shutil.copy(f, RES0 / f.name)
     import os
     janelas = [int(x) for x in os.environ.get("CEM0_JANELAS", "60 30 10").split()]
-    for agg, bracos in ((60, ["s1", "s2rk"]), (30, ["s1", "s2rk"]), (10, ["s1"])):
+    for agg, bracos in ((60, ["s1", "s2rk"]), (30, ["s1", "s2rk"]), (10, ["s1", "s2rk"])):
         if agg not in janelas:
             continue
         for b in bracos:
