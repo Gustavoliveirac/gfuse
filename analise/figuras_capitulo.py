@@ -80,7 +80,8 @@ def dominio(b):
     else:
         print(f"  sem o inventário ({inv}); INMET fora da figura")
     H.marca(ax, K.BH_LAT, K.BH_LON, marker="+", s=120, color="k")
-    l1 = [Line2D([], [], ls="", marker="o", color=c, markeredgecolor="k", label=NOME_PAPEL[p]) for p, c in COR_PAPEL.items()]
+    cont = {p: int((b["papel"] == p).sum()) for p in COR_PAPEL}
+    l1 = [Line2D([], [], ls="", marker="o", color=c, markeredgecolor="k", label=f"{NOME_PAPEL[p]} ({cont[p]})") for p, c in COR_PAPEL.items()]
     l2 = [Line2D([], [], ls="", marker=mk, color="0.6", markeredgecolor="k", label=r) for r, mk in SIMB_REDE.items()]
     leg = ax.legend(handles=l1, title="papel", fontsize=7, title_fontsize=7, loc="upper left", framealpha=0.92)
     ax.add_artist(leg)

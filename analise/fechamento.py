@@ -65,29 +65,39 @@ def qc_mes(b):
 
 
 def qc_bascula(b):
+    """Caso real de cada regra de báscula travada: a sequência inteira em vermelho, o período válido antes
+    em azul e, abaixo, a estação mais próxima com a distância."""
+    pos = {c: (px, py) for c, px, py in zip(b["cod"], b["px"], b["py"])}
+    brutas = {c: (f, s) for c, f, s in _series(b)}
     for cod_regra, nome in ((16, "horaria"), (2, "10min")):
         melhor = None
-        for c, f, s in _series(b):
+        for c, (f, s) in brutas.items():
             m = _tem(s["motivo"], cod_regra) & s["rainfall"].notna()
             if m.any():
                 dia = s.loc[m, "date"].dt.floor("D").value_counts()
                 if melhor is None or dia.iloc[0] > melhor[3]:
                     melhor = (c, f, dia.index[0], dia.iloc[0])
         if melhor is None:
-            print(f"  regra {cod_regra}: nenhum caso"); continue
+            continue
         c, f, dia, n = melhor
-        s = _ler_serie(f, c)
-        x = s[(s["date"] >= dia - pd.Timedelta(hours=12)) & (s["date"] < dia + pd.Timedelta(hours=36))].copy()
-        x["sinal"] = _tem(x["motivo"], cod_regra)
-        x.to_csv(SAI / f"qc_bascula_{nome}.csv", index=False)
-        fig, ax = plt.subplots(figsize=(10, 3.6))
-        ax.bar(x["date"], x["rainfall"], width=0.006, color="#4292c6", label="registro válido")
-        ax.bar(x.loc[x["sinal"], "date"], x.loc[x["sinal"], "rainfall"], width=0.006, color="#d62728",
-               label="sinalizado (báscula travada)")
-        ax.set_ylabel("chuva em 10 min (mm)"); ax.legend(fontsize=8)
-        ax.set_title(f"Estação {c} ({f}), {dia:%d/%m/%Y}: {n} registros sinalizados", fontsize=10)
+        s = brutas[c][1]
+        sinal = s[_tem(s["motivo"], cod_regra) & s["rainfall"].notna() & (s["date"].dt.floor("D") == dia)]
+        t_ini, t_fim = sinal["date"].min(), sinal["date"].max()
+        j0, j1 = t_ini - pd.Timedelta(hours=18), t_fim + pd.Timedelta(hours=6)
+        x = s[(s["date"] >= j0) & (s["date"] <= j1) & s["rainfall"].notna()].copy()
+        x["seq"] = (x["date"] >= t_ini) & (x["date"] <= t_fim)
+        d = {cc: np.hypot(pos[cc][0] - pos[c][0], pos[cc][1] - pos[c][1]) * K.KM_PER_PX for cc in brutas if cc != c and cc in pos}
+        viz = min(d, key=d.get)
+        sv = brutas[viz][1]; y = sv[(sv["date"] >= j0) & (sv["date"] <= j1) & sv["rainfall"].notna()]
+        fig, axs = plt.subplots(2, 1, figsize=(11, 6), sharex=True)
+        axs[0].bar(x.loc[~x["seq"], "date"], x.loc[~x["seq"], "rainfall"], width=0.006, color="#4292c6", label="válido")
+        axs[0].bar(x.loc[x["seq"], "date"], x.loc[x["seq"], "rainfall"], width=0.006, color="#d62728", label="sequência invalidada")
+        axs[0].set_title(f"{c} ({f.replace('CEMADEM', 'CEMADEN')})", fontsize=11); axs[0].set_ylabel("mm em 10 min"); axs[0].legend(fontsize=9)
+        axs[1].bar(y["date"], y["rainfall"], width=0.006, color="0.4")
+        axs[1].set_title(f"estação mais próxima, {viz}, a {d[viz]:.1f} km", fontsize=11); axs[1].set_ylabel("mm em 10 min")
         fig.autofmt_xdate(); fig.tight_layout(); fig.savefig(SAI / f"qc_bascula_{nome}.png", dpi=200); plt.close(fig)
-        print(f"  regra {cod_regra}: {c} ({f}) em {dia:%Y-%m-%d}, {n} registros")
+        x.to_csv(SAI / f"qc_bascula_{nome}.csv", index=False)
+        print(f"  regra {cod_regra}: {c} de {t_ini} a {t_fim}; vizinha {viz} a {d[viz]:.1f} km")
 
 
 def qc_mapas(b):
@@ -98,11 +108,9 @@ def qc_mapas(b):
     brutas = {c: s for c, f, s in _series(b)}
     pos = {c: (la, lo) for c, la, lo in zip(b["cod"], b["lat"], b["lon"])}
     fig, axs = plt.subplots(2, 2, figsize=(13, 13))
-    glat, glon = C.grade_latlon()
-    x0, x1, y0, y1 = H.caixa(glat, glon, folga_km=25)
+    H.FS = 1.8
     lin = []
     for ax, (regra, (rot, nwin)) in zip(axs.ravel(), ESCALA.items()):
-        H.mapa_base(ax, x0, x1, y0, y1)
         caso = None
         for c, s in brutas.items():
             m = _tem(s["motivo"], regra) & s["rainfall"].notna()
@@ -117,13 +125,18 @@ def qc_mapas(b):
             ax.set_title(f"{rot}: nenhum caso"); continue
         c, t0, v = caso
         ini = t0 - pd.Timedelta(minutes=10 * nwin)
+        la0, lo0 = pos[c]
+        x0, x1, y0, y1 = H.caixa(np.array([la0 - 0.15, la0 + 0.15]), np.array([lo0 - 0.15, lo0 + 0.15]), folga_km=0)
+        H.mapa_base(ax, x0, x1, y0, y1)
         vals, la, lo = [], [], []
         for cc, (f, ser) in series.items():
             if cc == c or cc not in pos:
                 continue
             w = ser[(ser.index > ini) & (ser.index <= t0)]
             vals.append(float(w.sum()) if len(w) else np.nan); la.append(pos[cc][0]); lo.append(pos[cc][1])
-        H.desenha_estacoes(ax, np.array(la), np.array(lo), np.array(vals), rotulos=True)
+        vals, la, lo = np.array(vals), np.array(la), np.array(lo)
+        ok = np.isfinite(vals)                      # estações sem dado na janela ficam fora
+        H.desenha_estacoes(ax, la[ok], lo[ok], vals[ok], rotulos=True, raio_pt=8)
         H.marca(ax, pos[c][0], pos[c][1], marker="X", s=160, color="m", edgecolors="white", linewidths=0.8)
         xx, yy = H._LL2M.transform(pos[c][1], pos[c][0])
         ax.annotate(f"{v:.1f} mm", (xx, yy), xytext=(8, 8), textcoords="offset points", fontsize=11, color="m", weight="bold")

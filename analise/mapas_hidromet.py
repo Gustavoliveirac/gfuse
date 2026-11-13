@@ -182,7 +182,7 @@ def desenha_estacoes(ax, lat, lon, mm, rotulos=False, raio_pt=5.5):
         ax.scatter(xi, yi, s=raio_pt ** 2, color=cor, alpha=a, edgecolors="white", linewidths=0.5, zorder=5)
         if rotulos and v is not None and np.isfinite(v) and v >= 0.2:
             ax.annotate(f"{v:.1f}" if v < 10 else f"{v:.0f}", (xi, yi), xytext=(4, 3),
-                        textcoords="offset points", fontsize=6, zorder=6)
+                        textcoords="offset points", fontsize=6 * FS, zorder=6)
 
 
 def marca(ax, lat, lon, **kw):
