@@ -90,34 +90,44 @@ def qc_bascula(b):
 
 
 def qc_mapas(b):
-    i10 = b["i10"]
-    t_all = b["t"]
+    """Para cada escala, o registro sinalizado com maior acumulado na escala, e o acumulado das vizinhas
+    na mesma janela, lidos das séries brutas (inclusive o valor invalidado da estação sinalizada)."""
+    import comum as C
+    series = {c: (f, s.assign(rainfall=s["rainfall"].fillna(0)).set_index("date")["rainfall"]) for c, f, s in _series(b)}
+    brutas = {c: s for c, f, s in _series(b)}
+    pos = {c: (la, lo) for c, la, lo in zip(b["cod"], b["lat"], b["lon"])}
     fig, axs = plt.subplots(2, 2, figsize=(13, 13))
-    glat, glon = __import__("comum").grade_latlon()
+    glat, glon = C.grade_latlon()
     x0, x1, y0, y1 = H.caixa(glat, glon, folga_km=25)
     lin = []
     for ax, (regra, (rot, nwin)) in zip(axs.ravel(), ESCALA.items()):
         H.mapa_base(ax, x0, x1, y0, y1)
         caso = None
-        for c, f, s in _series(b):
+        for c, s in brutas.items():
             m = _tem(s["motivo"], regra) & s["rainfall"].notna()
-            if m.any():
-                k = s.loc[m, "rainfall"].idxmax()
-                if caso is None or s.loc[k, "rainfall"] > caso[3]:
-                    caso = (c, f, s.loc[k, "date"], float(s.loc[k, "rainfall"]))
+            if not m.any():
+                continue
+            acc = series[c][1].rolling(nwin, min_periods=1).sum()
+            for t0 in s.loc[m, "date"]:
+                v = float(acc.get(t0, np.nan))
+                if np.isfinite(v) and (caso is None or v > caso[2]):
+                    caso = (c, t0, v)
         if caso is None:
             ax.set_title(f"{rot}: nenhum caso"); continue
-        c, f, t0, v = caso
-        it = int(np.argmin(np.abs((t_all - t0).total_seconds())))
-        R = b["R10"][max(0, it - nwin + 1):it + 1, :, -1]
-        obs = np.where(np.isfinite(R).all(0), R.sum(0), np.nan) if nwin > 1 else R[-1]
-        lat, lon = b["lat"][i10], b["lon"][i10]
-        H.desenha_estacoes(ax, lat, lon, obs, rotulos=True)
-        j = int(np.flatnonzero(b["cod"][i10] == c)[0]) if (b["cod"][i10] == c).any() else None
-        if j is not None:
-            H.marca(ax, lat[j], lon[j], marker="X", s=140, color="m", edgecolors="white", linewidths=0.8)
-        ax.set_title(f"{rot}: {c} ({f}), {t0:%d/%m/%Y %H:%M}, {v:.1f} mm", fontsize=10)
-        lin.append(dict(escala=rot, cod=c, rede=f, data=t0, valor_mm=v))
+        c, t0, v = caso
+        ini = t0 - pd.Timedelta(minutes=10 * nwin)
+        vals, la, lo = [], [], []
+        for cc, (f, ser) in series.items():
+            if cc == c or cc not in pos:
+                continue
+            w = ser[(ser.index > ini) & (ser.index <= t0)]
+            vals.append(float(w.sum()) if len(w) else np.nan); la.append(pos[cc][0]); lo.append(pos[cc][1])
+        H.desenha_estacoes(ax, np.array(la), np.array(lo), np.array(vals), rotulos=True)
+        H.marca(ax, pos[c][0], pos[c][1], marker="X", s=160, color="m", edgecolors="white", linewidths=0.8)
+        xx, yy = H._LL2M.transform(pos[c][1], pos[c][0])
+        ax.annotate(f"{v:.1f} mm", (xx, yy), xytext=(8, 8), textcoords="offset points", fontsize=11, color="m", weight="bold")
+        ax.set_title(f"{rot}: {c}, {ini:%d/%m/%Y %H:%M} a {t0:%H:%M}, {v:.1f} mm", fontsize=10)
+        lin.append(dict(escala=rot, cod=c, inicio=ini, fim=t0, acumulado_mm=v))
     fig.tight_layout(); fig.savefig(SAI / "qc_mapas_nao_confirmados.png", dpi=170); plt.close(fig)
     pd.DataFrame(lin).to_csv(SAI / "qc_mapas_nao_confirmados.csv", index=False)
     print(pd.DataFrame(lin).to_string(index=False))

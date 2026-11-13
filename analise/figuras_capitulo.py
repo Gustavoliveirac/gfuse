@@ -80,10 +80,10 @@ def dominio(b):
     H.marca(ax, K.BH_LAT, K.BH_LON, marker="+", s=120, color="k")
     l1 = [Line2D([], [], ls="", marker="o", color=c, markeredgecolor="k", label=NOME_PAPEL[p]) for p, c in COR_PAPEL.items()]
     l2 = [Line2D([], [], ls="", marker=mk, color="0.6", markeredgecolor="k", label=r) for r, mk in SIMB_REDE.items()]
-    leg = ax.legend(handles=l1, title="papel", fontsize=7, title_fontsize=7, loc="lower left", framealpha=0.92)
+    leg = ax.legend(handles=l1, title="papel", fontsize=7, title_fontsize=7, loc="upper left", framealpha=0.92)
     ax.add_artist(leg)
     ax.legend(handles=l2 + [Line2D([], [], color="k", lw=1.6, label="domínio (128 km)")], title="rede",
-              fontsize=7, title_fontsize=7, loc="lower right", framealpha=0.92)
+              fontsize=7, title_fontsize=7, loc="upper right", framealpha=0.92)
     fig.savefig(SAI / "fig3_2_dominio.png", dpi=220, bbox_inches="tight"); plt.close(fig)
     pd.DataFrame(dict(cod=b["cod"], rede=redes, papel=b["papel"], lat=b["lat"], lon=b["lon"])).to_csv(
         SAI / "fig3_2_dominio.csv", index=False)

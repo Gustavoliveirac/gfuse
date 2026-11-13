@@ -20,6 +20,7 @@ import matplotlib; matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import torch
 import comum as C, modelo as Mo, mapas_hidromet as H
+H.FS = 3.0
 import campos_gfuse as CG
 import cemig
 import functools
