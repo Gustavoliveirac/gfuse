@@ -42,7 +42,7 @@ AN = RAIZ / "resultados" / "analise"
 REDE = {"CEMADEM": "CEMADEN"}
 COR_PAPEL = {"holdout": "#d62728", "alvo": "#ff7f0e", "contexto": "#1f77b4", "fora": "#8c8c8c"}
 NOME_PAPEL = {"holdout": "validação espacial", "alvo": "avaliação", "contexto": "entrada", "fora": "fora do recorte"}
-SIMB_REDE = {"ANA": "^", "CEMADEN": "o", "SUDECAP": "s"}
+SIMB_REDE = {"ANA": "^", "CEMADEN": "o", "SUDECAP": "s", "INMET": "D"}
 
 
 def base():
@@ -64,6 +64,19 @@ def dominio(b):
             if m.any():
                 H.marca(ax, b["lat"][m], b["lon"][m], marker=mk, s=44 if papel == "holdout" else 30, color=cor,
                         edgecolors="k", linewidths=0.5)
+    inv = Path(__import__("os").environ.get("INVENTARIO", RAIZ / "logs" / "inventario_estacoes.csv"))
+    if inv.exists():                       # INMET a partir do inventário do hidromet
+        iv = pd.read_csv(inv, sep=";", decimal=",")
+        iv.columns = [c.lstrip("\ufeff") for c in iv.columns]
+        iv = iv[(iv["fonte"].str.lower() == "inmet") & iv["situacao"].str.startswith("com dado")]
+        for dentro, papel in ((True, "contexto"), (False, "fora")):
+            m = iv["dentro_do_recorte"] == dentro
+            if m.any():
+                H.marca(ax, iv.loc[m, "lat"].values, iv.loc[m, "lon"].values, marker="D", s=32, color=COR_PAPEL[papel],
+                        edgecolors="k", linewidths=0.5)
+        print(f"  INMET: {len(iv)} estações com dado")
+    else:
+        print(f"  sem o inventário ({inv}); INMET fora da figura")
     H.marca(ax, K.BH_LAT, K.BH_LON, marker="+", s=120, color="k")
     l1 = [Line2D([], [], ls="", marker="o", color=c, markeredgecolor="k", label=NOME_PAPEL[p]) for p, c in COR_PAPEL.items()]
     l2 = [Line2D([], [], ls="", marker=mk, color="0.6", markeredgecolor="k", label=r) for r, mk in SIMB_REDE.items()]

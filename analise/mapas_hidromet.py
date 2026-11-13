@@ -33,6 +33,7 @@ CAMPO = [(0.1, "#30123b", 0.0), (1, "#392a73", 1.0), (2, "#4143a7", 1), (3, "#45
 EST = [(0.2, "#deebf7"), (1, "#9ecae1"), (10, "#4292c6"), (20, "#08519c"), (30, "#a1009c")]
 SEM_CHUVA, SEM_DADO = "#bdbdbd", "#777777"
 ALPHA_CAMPO = 0.6
+FS = 1.0          # fator das fontes das legendas (as figuras de eventos usam 3)
 
 
 ESCALA_UNICA = False  # campos com a escala do hidromet limitada a 30+, estações com a escala própria
@@ -118,8 +119,8 @@ def _marcas(ax, x0, x1, y0, y1):
     passo = 0.25 if lo1 - lo0 < 2 else 0.5
     los = np.arange(math.ceil(lo0 / passo) * passo, lo1, passo)
     las = np.arange(math.ceil(la0 / passo) * passo, la1, passo)
-    ax.set_xticks([_LL2M.transform(l, la0)[0] for l in los]); ax.set_xticklabels([f"{l:.2f}°" for l in los], fontsize=6)
-    ax.set_yticks([_LL2M.transform(lo0, l)[1] for l in las]); ax.set_yticklabels([f"{l:.2f}°" for l in las], fontsize=6)
+    ax.set_xticks([_LL2M.transform(l, la0)[0] for l in los]); ax.set_xticklabels([f"{l:.2f}°" for l in los], fontsize=6 * FS)
+    ax.set_yticks([_LL2M.transform(lo0, l)[1] for l in las]); ax.set_yticklabels([f"{l:.2f}°" for l in las], fontsize=6 * FS)
     ax.tick_params(length=2, direction="in")
 
 
@@ -211,8 +212,8 @@ def legendas(fig, ax_campo=None, ax_est=None):
                 continue
             cb = fig.colorbar(ScalarMappable(Normalize(0, 4), cm), cax=ax, orientation="horizontal")
             cb.set_ticks(range(5)); cb.set_ticklabels(["0,2", "1", "10", "20", "30+"])
-            cb.set_label("Chuva em 1 h (mm): campos e pluviômetros na mesma escala", fontsize=7)
-            cb.ax.tick_params(labelsize=6)
+            cb.set_label("Chuva em 1 h (mm): campos e pluviômetros na mesma escala", fontsize=7 * FS)
+            cb.ax.tick_params(labelsize=6 * FS)
         if ax_est is not None:
             ax_est.axis("off")
         return
@@ -221,10 +222,10 @@ def legendas(fig, ax_campo=None, ax_est=None):
                                                          [0, 1, 2, 3, 4, 6, 8, 10, 12.5, 15, 17.5, 20, 22.5, 25, 27.5, 30]])
         cb = fig.colorbar(ScalarMappable(Normalize(0, 30), cm), cax=ax_campo, orientation="horizontal")
         cb.set_ticks([0, 10, 20, 30]); cb.set_ticklabels(["0", "10", "20", "30+"])
-        cb.set_label("Chuva (mm/h), estimativa de satélite, radar e modelos", fontsize=7)
-        cb.ax.tick_params(labelsize=6)
+        cb.set_label("Chuva (mm/h), estimativa de satélite, radar e modelos", fontsize=7 * FS)
+        cb.ax.tick_params(labelsize=6 * FS)
     if ax_est is not None:
         cm = LinearSegmentedColormap.from_list("est", [(i / 4, to_rgb(e[1])) for i, e in enumerate(EST)])
         cb = fig.colorbar(ScalarMappable(Normalize(0, 4), cm), cax=ax_est, orientation="horizontal")
         cb.set_ticks(range(5)); cb.set_ticklabels(["0,2", "1", "10", "20", "30+"])
-        cb.set_label("Chuva no pluviômetro (mm em 1 h)", fontsize=7); cb.ax.tick_params(labelsize=6)
+        cb.set_label("Chuva no pluviômetro (mm em 1 h)", fontsize=7 * FS); cb.ax.tick_params(labelsize=6 * FS)

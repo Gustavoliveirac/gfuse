@@ -68,7 +68,7 @@ def main():
     fs = produtos.fontes(60)
     glat, glon = C.grade_latlon()
     x0, x1, y0, y1 = H.caixa(glat, glon, folga_km=2)
-    fig = plt.figure(figsize=(3.3 * len(sel), 3.4 * len(LINHAS) + 0.8))
+    fig = plt.figure(figsize=(4.2 * len(sel), 4.2 * len(LINHAS) + 2.2))
     linhas_csv = []
     papel = be["papel"]
     for j, s in enumerate(sel):
@@ -93,8 +93,8 @@ def main():
         obs = obs_hora(be, idx[s])
         t_utc = tb + pd.Timedelta(hours=3)
         for i, (nome, rot) in enumerate(LINHAS):
-            ax = fig.add_axes([0.03 + j / len(sel) * 0.96, 0.1 + (len(LINHAS) - 1 - i) / len(LINHAS) * 0.88,
-                               0.96 / len(sel) - 0.01, 0.88 / len(LINHAS) - 0.02])
+            ax = fig.add_axes([0.07 + j / len(sel) * 0.92, 0.075 + (len(LINHAS) - 1 - i) / len(LINHAS) * 0.9,
+                               0.92 / len(sel) - 0.004, 0.9 / len(LINHAS) - 0.004])
             H.mapa_base(ax, x0, x1, y0, y1); ax.set_xticks([]); ax.set_yticks([])
             v = campos.get(nome)
             if v is not None:
@@ -103,7 +103,7 @@ def main():
                 else:
                     H.desenha_campo(ax, v, glat, glon, tipo="goes" if nome == "rrqpe" else "modelo")
             else:
-                ax.text(0.5, 0.5, "sem dado", transform=ax.transAxes, ha="center", va="center", fontsize=8, color="0.3")
+                ax.text(0.5, 0.5, "sem dado", transform=ax.transAxes, ha="center", va="center", fontsize=22, color="0.3")
             for pap, mk in (("alvo", "o"), ("holdout", "^")):
                 m = papel == pap
                 xs, ys = H._LL2M.transform(be["lon"][m], be["lat"][m])
@@ -111,12 +111,14 @@ def main():
                     cor, al = H.cor_estacao(val)
                     ax.scatter(xx, yy, marker=mk, s=26, color=cor, alpha=al, edgecolors="k", linewidths=0.4, zorder=5)
             if i == 0:
-                ax.set_title(f"{(t_utc - pd.Timedelta(hours=1)):%d/%m %H:%M} a {t_utc:%H:%M} UTC", fontsize=8)
+                ax.set_title(f"{(t_utc - pd.Timedelta(hours=1)):%d/%m %H:%M} a {t_utc:%H:%M} UTC", fontsize=22)
             if j == 0:
-                ax.set_ylabel(rot, fontsize=8)
+                ax.set_ylabel(rot, fontsize=22)
         linhas_csv.append(dict(goes_stem=s, bloco=f, max_obs=float(np.nanmax(obs)), cemig="cemig" in campos))
-    H.legendas(fig, fig.add_axes([0.1, 0.04, 0.35, 0.012]), fig.add_axes([0.55, 0.04, 0.35, 0.012]))
-    fig.text(0.5, 0.012, "círculos: estações de avaliação; triângulos: estações de validação espacial", ha="center", fontsize=8)
+    H.legendas(fig, fig.add_axes([0.07, 0.05, 0.3, 0.01]), fig.add_axes([0.42, 0.05, 0.3, 0.01]))
+    fig.legend(handles=[Line2D([], [], ls="", marker="o", color="0.6", markeredgecolor="k", markersize=16, label="avaliação"),
+                        Line2D([], [], ls="", marker="^", color="0.6", markeredgecolor="k", markersize=16, label="validação espacial")],
+               loc="lower right", bbox_to_anchor=(0.99, 0.02), fontsize=20, title="estações", title_fontsize=20, frameon=False)
     fig.savefig(SAI / f"{a.saida}.png", dpi=150, bbox_inches="tight"); plt.close(fig)
     pd.DataFrame(linhas_csv).to_csv(SAI / f"{a.saida}.csv", index=False)
     print("FIM", sel)
